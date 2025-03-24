@@ -103,7 +103,7 @@ const AddCustomOperationDialog = ({ isOpen, onClose, onAdd }) => {
             <small className="form-helper-text">
               Write a JavaScript function that implements your operation.
               <br />
-              Example: <code>(a, b) => a + b</code> or <code>function(a, b) { return a + b; }</code>
+              Example: <code>(a, b) =&gt; a + b</code> or <code>function(a, b) {'{'} return a + b; {'}'}</code>
             </small>
           </div>
           
