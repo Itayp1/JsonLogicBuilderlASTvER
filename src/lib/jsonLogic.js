@@ -1,32 +1,46 @@
-/**
- * Extracts variable names from a JSONLogic expression
- * @param {Object} expression - The JSONLogic expression
- * @returns {Array} Array of variable names used in the expression
- */
+import jsonLogic from 'json-logic-js';
+
+// Add custom operations
+jsonLogic.add_operation("afterDate", (dateStr, compareToStr) => {
+  const date = new Date(dateStr);
+  const compareTo = new Date(compareToStr);
+  return date > compareTo;
+});
+
+jsonLogic.add_operation("beforeDate", (dateStr, compareToStr) => {
+  const date = new Date(dateStr);
+  const compareTo = new Date(compareToStr);
+  return date < compareTo;
+});
+
+// Helper function to extract variables used in a JSONLogic expression
 export const extractVariables = (expression) => {
-  const variables = new Set();
-
-  const traverse = (obj) => {
-    if (!obj || typeof obj !== 'object') {
+  const variables = [];
+  
+  const traverse = (expr) => {
+    if (!expr || typeof expr !== 'object') {
       return;
     }
-
-    // Check if it's a var operation
-    if ('var' in obj && typeof obj.var === 'string') {
-      variables.add(obj.var);
-      return;
+    
+    if ('var' in expr) {
+      const varName = expr.var;
+      if (typeof varName === 'string' && !variables.includes(varName)) {
+        variables.push(varName);
+      }
     }
-
-    // Recursively check arrays
-    if (Array.isArray(obj)) {
-      obj.forEach(item => traverse(item));
-      return;
+    
+    for (const key in expr) {
+      const value = expr[key];
+      if (Array.isArray(value)) {
+        value.forEach(traverse);
+      } else if (value && typeof value === 'object') {
+        traverse(value);
+      }
     }
-
-    // Recursively check object properties
-    Object.values(obj).forEach(value => traverse(value));
   };
-
+  
   traverse(expression);
-  return Array.from(variables);
+  return variables;
 };
+
+export { jsonLogic };
