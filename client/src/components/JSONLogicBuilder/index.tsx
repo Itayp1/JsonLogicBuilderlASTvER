@@ -12,6 +12,7 @@ import PageLayout from '../Layout/PageLayout';
 import AddCustomOperationDialog from './AddCustomOperationDialog';
 import { categories, defaultOperations } from '@/lib/operations';
 import jsonLogic from 'json-logic-js';
+import _ from 'lodash';
 
 // Default template example
 const DEFAULT_EXPRESSION = {
@@ -39,6 +40,11 @@ const JSONLogicBuilder = () => {
   const [isAddCustomOperationOpen, setIsAddCustomOperationOpen] = useState(false);
   const [operations, setOperations] = useState<OperationCategory[]>(categories);
   const [usedVariables, setUsedVariables] = useState<{ name: string; value: any }[]>([]);
+  
+  // Function to update expression with a new node
+  const updateExpression = useCallback((newExpression: JSONLogicExpression) => {
+    setExpression(newExpression);
+  }, []);
 
   // Set up drag sensors
   const sensors = useSensors(
@@ -64,16 +70,118 @@ const JSONLogicBuilder = () => {
     }
   }, [operations]);
 
-  // Handle drag end
-  const handleDragEnd = useCallback((event: any) => {
-    setActiveId(null);
-    setDraggingOperation(null);
+  // Handle drag over
+  const handleDragOver = useCallback((event: any) => {
+    const { active, over } = event;
+    
+    // If we're not over anything, don't do anything
+    if (!over) return;
+    
+    // Get the data associated with the current drag target
+    const overData = over.data.current;
+    
+    // Only handle if the target accepts operation drops
+    if (overData && overData.acceptsOperation) {
+      // This will show a visual indicator
+    }
   }, []);
 
-  // Function to update expression with a new node
-  const updateExpression = useCallback((newExpression: JSONLogicExpression) => {
-    setExpression(newExpression);
-  }, []);
+  // Handle drag end
+  const handleDragEnd = useCallback((event: any) => {
+    const { active, over } = event;
+    
+    // Reset the active drag state
+    setActiveId(null);
+    setDraggingOperation(null);
+    
+    // If we're not dragging an operation or not over a drop target, do nothing
+    if (!draggingOperation || !over) return;
+    
+    // Get data associated with the drop target
+    const overData = over.data.current;
+    
+    // Only handle if the target accepts operation drops
+    if (overData && overData.acceptsOperation) {
+      // We need to get a copy of the current expression to modify
+      const newExpression = _.cloneDeep(expression);
+      
+      // If it's the root builder area
+      if (overData.isRoot && Object.keys(newExpression).length === 0) {
+        // Create a new operation at the root level
+        const opId = draggingOperation.id;
+        
+        // Different operations get different default values
+        let defaultValue: any;
+        
+        // Default values based on the operation type
+        if (["and", "or"].includes(opId)) {
+          defaultValue = []; // Empty array for logical operators
+        } else if (["if", ">", ">=", "<", "<=", "==", "===", "!=", "!=="].includes(opId)) {
+          defaultValue = ["", ""]; // Two empty strings for comparison operators
+        } else if (["+", "-", "*", "/", "%"].includes(opId)) {
+          defaultValue = [0, 0]; // Two zeros for arithmetic operators
+        } else if (["var", "missing", "cat"].includes(opId)) {
+          defaultValue = ""; // Empty string for operations that work with strings
+        } else {
+          defaultValue = ""; // Default empty string for other operations
+        }
+        
+        // Set the new operation in the expression
+        newExpression[opId] = defaultValue;
+        
+        updateExpression(newExpression);
+        toast({
+          title: "Operation added",
+          description: `Added "${opId}" operation as root`
+        });
+      } 
+      // If we're dropping into a path in the expression
+      else if (overData.path) {
+        const path = overData.path;
+        let current = newExpression;
+        
+        // Navigate to the parent object
+        for (let i = 0; i < path.length - 1; i++) {
+          current = current[path[i]];
+        }
+        
+        // Get the last part of the path (the key or index)
+        const lastKey = path[path.length - 1];
+        
+        // If the current part is an array (like in "or" or "and" operators)
+        if (Array.isArray(current[lastKey])) {
+          const opId = draggingOperation.id;
+          
+          // Get the array
+          const array = current[lastKey];
+          
+          // Same default value logic as above
+          let defaultValue: any;
+          
+          if (["and", "or"].includes(opId)) {
+            defaultValue = [];
+          } else if (["if", ">", ">=", "<", "<=", "==", "===", "!=", "!=="].includes(opId)) {
+            defaultValue = ["", ""];
+          } else if (["+", "-", "*", "/", "%"].includes(opId)) {
+            defaultValue = [0, 0];
+          } else if (["var", "missing", "cat"].includes(opId)) {
+            defaultValue = "";
+          } else {
+            defaultValue = "";
+          }
+          
+          // Add the new operation to the array
+          array.push({ [opId]: defaultValue });
+          
+          updateExpression(newExpression);
+          toast({
+            title: "Operation added",
+            description: `Added "${opId}" operation to the expression`
+          });
+        }
+      }
+    }
+  }, [draggingOperation, expression, toast, updateExpression]);
 
   // Function to reset the builder
   const resetBuilder = useCallback(() => {
@@ -155,13 +263,13 @@ const JSONLogicBuilder = () => {
   // Initialize pre-defined custom operations
   useEffect(() => {
     // Add afterDate and beforeDate operations
-    jsonLogic.add_operation("afterDate", (dateStr, compareToStr) => {
+    jsonLogic.add_operation("afterDate", (dateStr: string, compareToStr: string) => {
       const date = new Date(dateStr);
       const compareTo = new Date(compareToStr);
       return date > compareTo;
     });
 
-    jsonLogic.add_operation("beforeDate", (dateStr, compareToStr) => {
+    jsonLogic.add_operation("beforeDate", (dateStr: string, compareToStr: string) => {
       const date = new Date(dateStr);
       const compareTo = new Date(compareToStr);
       return date < compareTo;
@@ -176,6 +284,7 @@ const JSONLogicBuilder = () => {
       <DndContext
         sensors={sensors}
         onDragStart={handleDragStart}
+        onDragOver={handleDragOver}
         onDragEnd={handleDragEnd}
         modifiers={[restrictToWindowEdges]}
       >

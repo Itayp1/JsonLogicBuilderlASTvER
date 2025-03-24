@@ -36,8 +36,12 @@ const OperationNode = ({
 }: OperationNodeProps) => {
   const { toast } = useToast();
   const [isCollapsed, setIsCollapsed] = useState(false);
+  // Determine if the value is a variable reference (has format {var: "name"})
+  const isVarReference = typeof value === 'object' && value !== null && 
+                         !Array.isArray(value) && 'var' in value;
+                         
   const [valueType, setValueType] = useState<'text' | 'variable'>(
-    typeof value === 'object' && value !== null && 'var' in value ? 'variable' : 'text'
+    isVarReference ? 'variable' : 'text'
   );
   
   useEffect(() => {
@@ -185,9 +189,11 @@ const OperationNode = ({
                 if (newType === 'variable') {
                   // Convert current value to a variable reference
                   updateValueAtPath({ var: String(value) });
-                } else if (newType === 'text' && typeof value === 'object' && value !== null && 'var' in value) {
+                } else if (newType === 'text' && isVarReference) {
                   // Convert from variable reference back to plain text
-                  const varName = String(value.var);
+                  // We need to safely extract the var name from the object
+                  const varObj = value as {var: string};
+                  const varName = varObj.var || '';
                   updateValueAtPath(varName);
                 }
               }}
@@ -234,7 +240,7 @@ const OperationNode = ({
           
           {valueType === 'variable' && (
             <div className="pl-2 text-xs text-blue-600">
-              This will use the value from the variable named "{value}"
+              This will use the value from the variable named "{isVarReference && (value as {var: string}).var || String(value)}"
             </div>
           )}
         </div>
@@ -267,13 +273,73 @@ const OperationNode = ({
             }
             
             // Otherwise render as simple value
+            // Check if the item is a variable reference
+            const isItemVarRef = typeof item === 'object' && item !== null && 
+                              !Array.isArray(item) && 'var' in item;
+                              
             return (
               <div key={`${itemPath.join('-')}`} className="flex items-center space-x-2">
+                <Select 
+                  value={isItemVarRef ? 'variable' : 'text'}
+                  onValueChange={(newType: 'text' | 'variable') => {
+                    if (newType === 'variable') {
+                      // Convert to variable reference
+                      const newArray = [...value];
+                      newArray[index] = { var: String(item) };
+                      updateValueAtPath(newArray);
+                    } else if (newType === 'text' && isItemVarRef) {
+                      // Convert back to text
+                      const varObj = item as {var: string};
+                      const newArray = [...value];
+                      newArray[index] = varObj.var || '';
+                      updateValueAtPath(newArray);
+                    }
+                  }}
+                >
+                  <SelectTrigger className="w-[80px]">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="text">
+                      <div className="flex items-center">
+                        <Text className="mr-2 h-4 w-4" />
+                        <span>Text</span>
+                      </div>
+                    </SelectItem>
+                    <SelectItem value="variable">
+                      <div className="flex items-center">
+                        <Variable className="mr-2 h-4 w-4" />
+                        <span>Variable</span>
+                      </div>
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
+                
                 <div className="bg-gray-100 border rounded p-2 flex-grow">
                   <Input 
                     type={typeof item === 'number' ? 'number' : 'text'}
-                    value={typeof item === 'object' ? JSON.stringify(item) : String(item)}
-                    onChange={(e) => handleValueChange(e, index)} 
+                    value={
+                      isItemVarRef ? 
+                        (item as {var: string}).var || '' : 
+                        (typeof item === 'object' ? JSON.stringify(item) : String(item))
+                    }
+                    onChange={(e) => {
+                      const newValue = e.target.value;
+                      const newArray = [...value];
+                      
+                      if (isItemVarRef) {
+                        // Update the variable name in the var reference object
+                        newArray[index] = { var: newValue };
+                      } else {
+                        // Try to parse the value appropriately
+                        const parsedValue = !isNaN(Number(newValue)) ? Number(newValue) :
+                                           newValue === 'true' ? true :
+                                           newValue === 'false' ? false : newValue;
+                        newArray[index] = parsedValue;
+                      }
+                      
+                      updateValueAtPath(newArray);
+                    }} 
                     className="w-full bg-transparent border-none focus-visible:ring-0 focus-visible:outline-none"
                   />
                 </div>
