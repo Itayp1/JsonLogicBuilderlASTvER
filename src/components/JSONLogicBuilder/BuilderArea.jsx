@@ -49,12 +49,12 @@ const BuilderArea = ({ expression, updateExpression, resetBuilder }) => {
 
   const handleAddTemplate = () => {
     updateExpression(DEFAULT_TEMPLATE);
-    alert("Default template has been applied to the builder");
+    alert("Template added: Default template has been applied to the builder");
   };
 
   const handleClearBuilder = () => {
     updateExpression({});
-    alert("All operations have been removed from the builder");
+    alert("Builder cleared: All operations have been removed from the builder");
   };
 
   // Find root operation (first key in the object)
@@ -65,68 +65,95 @@ const BuilderArea = ({ expression, updateExpression, resetBuilder }) => {
 
   return (
     <div className="builder-area">
-      <div className="section-header">
-        <h2>Builder</h2>
-        <div className="builder-controls">
-          <button onClick={handleAddTemplate} className="action-button secondary-button" title="Add Template">
-            Add Template
-          </button>
-          <button onClick={handleClearBuilder} className="action-button secondary-button" title="Clear Builder">
-            Clear
-          </button>
-          <button onClick={handleExpandAll} className="action-button secondary-button" title="Expand All">
-            Expand All
-          </button>
-          <button onClick={handleCollapseAll} className="action-button secondary-button" title="Collapse All">
-            Collapse All
-          </button>
+      <div className="builder-section">
+        <div className="section-header">
+          <h2>Builder</h2>
+          <div className="builder-controls">
+            <button 
+              className="action-button secondary-button"
+              onClick={handleAddTemplate}
+              title="Add Template"
+            >
+              Add Template
+            </button>
+            <button 
+              className="action-button secondary-button"
+              onClick={handleClearBuilder}
+              title="Clear Builder"
+            >
+              Clear
+            </button>
+            <button 
+              className="action-button secondary-button"
+              onClick={handleExpandAll}
+              title="Expand All"
+            >
+              Expand All
+            </button>
+            <button 
+              className="action-button secondary-button"
+              onClick={handleCollapseAll}
+              title="Collapse All"
+            >
+              Collapse All
+            </button>
+          </div>
+        </div>
+
+        <div className="builder-content">
+          <div className="builder-info">
+            Drag operations from the sidebar and drop them here. Nest operations by dragging inside other operations.
+          </div>
+
+          <div ref={setNodeRef} className={`builder-drop-area ${isEmpty ? 'empty-builder' : ''}`}>
+            {rootOperation ? (
+              <OperationNode
+                operation={rootOperation}
+                value={rootValue}
+                path={[rootOperation]}
+                updateExpression={updateExpression}
+                expression={expression}
+                isRoot={true}
+                isCollapsedGlobal={isCollapsed}
+                allowRootDelete={true}
+              />
+            ) : (
+              <div className="empty-builder-message">
+                <p>Drop an operation here to start building your logic</p>
+                <button onClick={handleAddTemplate} className="action-button primary-button">
+                  Add Template
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
-      <div className="builder-instruction">
-        Drag operations from the sidebar and drop them here. Nest operations by dragging inside other operations.
-      </div>
-
-      <div 
-        ref={setNodeRef} 
-        className={isEmpty ? 'dropzone' : 'operation-container'}
-      >
-        {rootOperation ? (
-          <OperationNode
-            operation={rootOperation}
-            value={rootValue}
-            path={[rootOperation]}
-            updateExpression={updateExpression}
-            expression={expression}
-            isRoot={true}
-            isCollapsedGlobal={isCollapsed}
-            allowRootDelete={true}
-          />
-        ) : (
-          <div className="empty-builder">
-            <p>Drop an operation here to start building your logic</p>
-            <button onClick={handleAddTemplate} className="action-button primary-button">
-              Add Template
-            </button>
-          </div>
-        )}
-      </div>
-
-      <div className="json-output">
-        <div className="json-header">
-          <h3>JSON Output</h3>
+      <div className="json-output-section">
+        <div className="section-header">
+          <h2>JSON Output</h2>
           <div className="json-controls">
-            <button onClick={handleCopyJSON} className="action-button secondary-button" title="Copy JSON">
+            <button 
+              className="action-button secondary-button"
+              onClick={handleCopyJSON}
+              title="Copy JSON"
+            >
               Copy
             </button>
-            <button onClick={handleFormatJSON} className="action-button secondary-button" title="Format JSON">
+            <button 
+              className="action-button secondary-button"
+              onClick={handleFormatJSON}
+              title="Format JSON"
+            >
               Format
             </button>
           </div>
         </div>
-        <pre ref={jsonRef} className="json-code">
-          {JSON.stringify(expression, null, 2)}
-        </pre>
+        <div className="json-content">
+          <pre ref={jsonRef} className="json-display">
+            {JSON.stringify(expression, null, 2)}
+          </pre>
+        </div>
       </div>
     </div>
   );

@@ -4,8 +4,9 @@ import { restrictToWindowEdges } from '@dnd-kit/modifiers';
 import OperationsSidebar from './OperationsSidebar';
 import BuilderArea from './BuilderArea';
 import TestArea from './TestArea';
-import jsonLogic from 'json-logic-js';
+import AddCustomOperationDialog from './AddCustomOperationDialog';
 import { categories, defaultOperations } from '../../lib/operations';
+import jsonLogic from 'json-logic-js';
 import _ from 'lodash';
 
 // Default template example
@@ -123,7 +124,7 @@ const JSONLogicBuilder = () => {
         newExpression[opId] = defaultValue;
         
         updateExpression(newExpression);
-        alert(`Added "${opId}" operation as root`);
+        alert(`Operation added: Added "${opId}" operation as root`);
       } 
       // If we're dropping into a path in the expression
       else if (overData.path) {
@@ -164,7 +165,7 @@ const JSONLogicBuilder = () => {
           array.push({ [opId]: defaultValue });
           
           updateExpression(newExpression);
-          alert(`Added "${opId}" operation to the expression`);
+          alert(`Operation added: Added "${opId}" operation to the expression`);
         }
       }
     }
@@ -173,7 +174,7 @@ const JSONLogicBuilder = () => {
   // Function to reset the builder
   const resetBuilder = useCallback(() => {
     setExpression(DEFAULT_EXPRESSION);
-    alert("The builder has been reset to the default template");
+    alert("Builder reset: The builder has been reset to the default template");
   }, []);
 
   // Function to evaluate the JSONLogic expression
@@ -210,7 +211,7 @@ const JSONLogicBuilder = () => {
       setUsedVariables(extractedVars);
     } catch (error) {
       console.error('Error evaluating expression:', error);
-      alert(error instanceof Error ? error.message : "Invalid test data format");
+      alert(`Evaluation failed: ${error instanceof Error ? error.message : "Invalid test data format"}`);
     }
   }, [expression, testData]);
 
@@ -230,10 +231,12 @@ const JSONLogicBuilder = () => {
       setOperations(updatedOperations);
 
       // Add the custom operation to JSONLogic
-      jsonLogic.add_operation(operation.id, operation.implementation);
+      if (operation.implementation) {
+        jsonLogic.add_operation(operation.id, operation.implementation);
+      }
 
       setIsAddCustomOperationOpen(false);
-      alert(`The "${operation.id}" operation has been added successfully`);
+      alert(`Custom operation added: The "${operation.id}" operation has been added successfully`);
     }
   }, [operations]);
 
@@ -257,7 +260,7 @@ const JSONLogicBuilder = () => {
   }, []);
 
   return (
-    <div className="app-container">
+    <div className="jsonlogic-builder">
       <DndContext
         sensors={sensors}
         onDragStart={handleDragStart}
@@ -271,40 +274,36 @@ const JSONLogicBuilder = () => {
             onAddCustomOperation={() => setIsAddCustomOperationOpen(true)}
           />
           
-          <div className="main-content">
-            <BuilderArea 
-              expression={expression} 
-              updateExpression={updateExpression}
-              resetBuilder={resetBuilder}
-            />
-            
-            <TestArea 
-              testData={testData}
-              setTestData={setTestData}
-              evaluateExpression={evaluateExpression}
-              testResult={testResult}
-              usedVariables={usedVariables}
-            />
-          </div>
+          <BuilderArea 
+            expression={expression} 
+            updateExpression={updateExpression}
+            resetBuilder={resetBuilder}
+          />
+          
+          <TestArea 
+            testData={testData}
+            setTestData={setTestData}
+            evaluateExpression={evaluateExpression}
+            testResult={testResult}
+            usedVariables={usedVariables}
+          />
         </div>
 
         <DragOverlay>
           {activeId && draggingOperation ? (
-            <div className="operation-item opacity-80 cursor-grabbing">
-              <div className="font-medium">"{draggingOperation.id}"</div>
-              <div className="text-xs">{draggingOperation.description}</div>
+            <div className="dragging-operation">
+              <div className="operation-name">"{draggingOperation.id}"</div>
+              <div className="operation-description">{draggingOperation.description}</div>
             </div>
           ) : null}
         </DragOverlay>
       </DndContext>
 
-      {isAddCustomOperationOpen && (
-        <AddCustomOperationDialog 
-          isOpen={isAddCustomOperationOpen} 
-          onClose={() => setIsAddCustomOperationOpen(false)}
-          onAdd={addCustomOperation}
-        />
-      )}
+      <AddCustomOperationDialog 
+        isOpen={isAddCustomOperationOpen} 
+        onClose={() => setIsAddCustomOperationOpen(false)}
+        onAdd={addCustomOperation}
+      />
     </div>
   );
 };
