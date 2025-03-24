@@ -1,110 +1,117 @@
 import React, { useState } from 'react';
 
 const AddCustomOperationDialog = ({ isOpen, onClose, onAdd }) => {
-  const [name, setName] = useState('');
-  const [description, setDescription] = useState('');
-  const [implementation, setImplementation] = useState('');
-  
-  const handleSave = () => {
-    if (!name.trim()) {
-      alert("Name is required: Please provide a name for the custom operation");
-      return;
-    }
+  const [operation, setOperation] = useState({
+    id: '',
+    description: '',
+    category: 'custom',
+    implementation: ''
+  });
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
     
-    if (!description.trim()) {
-      alert("Description is required: Please provide a description for the custom operation");
-      return;
-    }
-    
-    if (!implementation.trim()) {
-      alert("Implementation is required: Please provide a JavaScript implementation for the custom operation");
-      return;
-    }
-    
-    // Validate implementation by trying to convert it to a function
+    // Try to convert the implementation string to a function
+    let implementationFn;
     try {
       // eslint-disable-next-line no-new-func
-      const fn = new Function(`return ${implementation}`)();
-      if (typeof fn !== 'function') {
-        throw new Error('Not a valid function');
+      implementationFn = new Function(
+        'return ' + operation.implementation
+      )();
+      
+      if (typeof implementationFn !== 'function') {
+        alert('Implementation must be a valid function.');
+        return;
       }
-      
-      const operation = {
-        id: name.trim(),
-        description: description.trim(),
-        implementation: fn,
-        category: 'custom'
-      };
-      
-      onAdd(operation);
-      
-      // Reset form
-      setName('');
-      setDescription('');
-      setImplementation('');
-      onClose();
     } catch (error) {
-      alert("Invalid implementation: The implementation is not a valid JavaScript function");
+      alert(`Error in function implementation: ${error.message}`);
+      return;
     }
+    
+    // Add the custom operation
+    onAdd({
+      ...operation,
+      implementation: implementationFn
+    });
+    
+    // Reset the form
+    setOperation({
+      id: '',
+      description: '',
+      category: 'custom',
+      implementation: ''
+    });
   };
-  
+
   if (!isOpen) return null;
-  
+
   return (
-    <div className="dialog-overlay">
-      <div className="dialog-content">
-        <div className="dialog-header">
-          <h2>Add Custom Operation</h2>
-          <p className="dialog-description">
-            Create a new custom operation to use in your JSONLogic expressions
-          </p>
+    <div className="modal-backdrop">
+      <div className="modal-content">
+        <div className="modal-header">
+          <h3>Add Custom Operation</h3>
+          <button className="close-button" onClick={onClose}>×</button>
         </div>
         
-        <div className="dialog-body">
+        <form onSubmit={handleSubmit}>
           <div className="form-group">
-            <label htmlFor="name">Operation Name</label>
+            <label htmlFor="operation-id">Operation ID:</label>
             <input
-              id="name"
+              id="operation-id"
               type="text"
-              className="input-field"
-              placeholder="e.g., containsString"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
+              value={operation.id}
+              onChange={(e) => setOperation({ ...operation, id: e.target.value })}
+              required
+              placeholder="e.g., myCustomOperation"
             />
           </div>
           
           <div className="form-group">
-            <label htmlFor="description">Description</label>
+            <label htmlFor="operation-description">Description:</label>
             <input
-              id="description"
+              id="operation-description"
               type="text"
-              className="input-field"
-              placeholder="e.g., Checks if string contains substring"
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
+              value={operation.description}
+              onChange={(e) => setOperation({ ...operation, description: e.target.value })}
+              required
+              placeholder="Describe what this operation does"
             />
           </div>
           
           <div className="form-group">
-            <label htmlFor="implementation">Implementation (JavaScript)</label>
+            <label htmlFor="operation-category">Category:</label>
+            <input
+              id="operation-category"
+              type="text"
+              value={operation.category}
+              onChange={(e) => setOperation({ ...operation, category: e.target.value.toLowerCase() })}
+              required
+              placeholder="e.g., custom, math, logic"
+            />
+          </div>
+          
+          <div className="form-group">
+            <label htmlFor="operation-implementation">Implementation (JavaScript function):</label>
             <textarea
-              id="implementation"
-              className="textarea-field"
-              placeholder="(a, b) => String(a).includes(String(b))"
+              id="operation-implementation"
+              value={operation.implementation}
+              onChange={(e) => setOperation({ ...operation, implementation: e.target.value })}
+              required
+              placeholder="(a, b) => { return a + b; }"
               rows={5}
-              value={implementation}
-              onChange={(e) => setImplementation(e.target.value)}
             />
-            <p className="helper-text">
-              Write a JavaScript function that will implement this operation.
-            </p>
+            <small className="form-helper-text">
+              Write a JavaScript function that implements your operation.
+              <br />
+              Example: <code>(a, b) => a + b</code> or <code>function(a, b) { return a + b; }</code>
+            </small>
           </div>
-        </div>
-        
-        <div className="dialog-footer">
-          <button className="action-button secondary-button" onClick={onClose}>Cancel</button>
-          <button className="action-button primary-button" onClick={handleSave}>Add Operation</button>
-        </div>
+          
+          <div className="form-actions">
+            <button type="button" className="cancel-button" onClick={onClose}>Cancel</button>
+            <button type="submit" className="submit-button">Add Operation</button>
+          </div>
+        </form>
       </div>
     </div>
   );

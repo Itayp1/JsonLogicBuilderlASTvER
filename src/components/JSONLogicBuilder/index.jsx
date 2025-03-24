@@ -1,310 +1,178 @@
 import React, { useState, useCallback, useEffect } from 'react';
-import { DndContext, DragOverlay, useSensor, useSensors, PointerSensor } from '@dnd-kit/core';
-import { restrictToWindowEdges } from '@dnd-kit/modifiers';
 import OperationsSidebar from './OperationsSidebar';
 import BuilderArea from './BuilderArea';
 import TestArea from './TestArea';
 import AddCustomOperationDialog from './AddCustomOperationDialog';
 import { categories, defaultOperations } from '../../lib/operations';
-import jsonLogic from 'json-logic-js';
-import _ from 'lodash';
-
-// Default template example
-const DEFAULT_EXPRESSION = {
-  "or": [
-    {
-      ">": [
-        { "+": [1, { "var": "myVariable" }] },
-        5
-      ]
-    }
-  ]
-};
-
-const DEFAULT_TEST_DATA = {
-  "myVariable": 10
-};
+import { jsonLogic, extractVariables } from '../../lib/jsonLogic';
+import { DndContext, DragOverlay } from '@dnd-kit/core';
 
 const JSONLogicBuilder = () => {
-  const [activeId, setActiveId] = useState(null);
-  const [draggingOperation, setDraggingOperation] = useState(null);
-  const [expression, setExpression] = useState(DEFAULT_EXPRESSION);
-  const [testData, setTestData] = useState(JSON.stringify(DEFAULT_TEST_DATA, null, 2));
-  const [testResult, setTestResult] = useState(null);
-  const [isAddCustomOperationOpen, setIsAddCustomOperationOpen] = useState(false);
-  const [operations, setOperations] = useState(categories);
-  const [usedVariables, setUsedVariables] = useState([]);
+  // State for the current JSONLogic expression
+  const [expression, setExpression] = useState({ "==": [1, 1] });
   
-  // Function to update expression with a new node
+  // State for custom operations
+  const [operations, setOperations] = useState(categories);
+  
+  // State for the test data and results
+  const [testData, setTestData] = useState('{\n  "user": {\n    "name": "John",\n    "age": 30\n  },\n  "items": [1, 2, 3, 4]\n}');
+  const [testResult, setTestResult] = useState(null);
+  
+  // State for UI controls
+  const [isAddCustomOperationOpen, setIsAddCustomOperationOpen] = useState(false);
+  const [isCollapsed, setIsCollapsed] = useState(false);
+  
+  // State for drag and drop
+  const [activeDragId, setActiveDragId] = useState(null);
+  const [activeDragData, setActiveDragData] = useState(null);
+  
+  // Extract variables used in the expression
+  const usedVariables = extractVariables(expression).map(name => {
+    try {
+      const data = JSON.parse(testData);
+      return { name, value: jsonLogic.apply({ "var": name }, data) };
+    } catch (e) {
+      return { name, value: null };
+    }
+  });
+
+  // Function to update the JSONLogic expression
   const updateExpression = useCallback((newExpression) => {
     setExpression(newExpression);
   }, []);
 
-  // Set up drag sensors
-  const sensors = useSensors(
-    useSensor(PointerSensor, {
-      activationConstraint: {
-        distance: 8,
-      },
-    })
-  );
-
-  // Handle drag start
-  const handleDragStart = useCallback((event) => {
-    const { active } = event;
-    setActiveId(active.id);
-
-    // Find the operation being dragged
-    for (const category of operations) {
-      const operation = category.operations.find(op => op.id === active.id);
-      if (operation) {
-        setDraggingOperation(operation);
-        break;
-      }
-    }
-  }, [operations]);
-
-  // Handle drag over
-  const handleDragOver = useCallback((event) => {
-    const { active, over } = event;
-    
-    // If we're not over anything, don't do anything
-    if (!over) return;
-    
-    // Get the data associated with the current drag target
-    const overData = over.data.current;
-    
-    // Only handle if the target accepts operation drops
-    if (overData && overData.acceptsOperation) {
-      // This will show a visual indicator
-    }
-  }, []);
-
-  // Handle drag end
-  const handleDragEnd = useCallback((event) => {
-    const { active, over } = event;
-    
-    // Reset the active drag state
-    setActiveId(null);
-    setDraggingOperation(null);
-    
-    // If we're not dragging an operation or not over a drop target, do nothing
-    if (!draggingOperation || !over) return;
-    
-    // Get data associated with the drop target
-    const overData = over.data.current;
-    
-    // Only handle if the target accepts operation drops
-    if (overData && overData.acceptsOperation) {
-      // We need to get a copy of the current expression to modify
-      const newExpression = _.cloneDeep(expression);
-      
-      // If it's the root builder area
-      if (overData.isRoot && Object.keys(newExpression).length === 0) {
-        // Create a new operation at the root level
-        const opId = draggingOperation.id;
-        
-        // Different operations get different default values
-        let defaultValue;
-        
-        // Default values based on the operation type
-        if (["and", "or"].includes(opId)) {
-          defaultValue = []; // Empty array for logical operators
-        } else if (["if", ">", ">=", "<", "<=", "==", "===", "!=", "!=="].includes(opId)) {
-          defaultValue = ["", ""]; // Two empty strings for comparison operators
-        } else if (["+", "-", "*", "/", "%"].includes(opId)) {
-          defaultValue = [0, 0]; // Two zeros for arithmetic operators
-        } else if (["var", "missing", "cat"].includes(opId)) {
-          defaultValue = ""; // Empty string for operations that work with strings
-        } else {
-          defaultValue = ""; // Default empty string for other operations
-        }
-        
-        // Set the new operation in the expression
-        newExpression[opId] = defaultValue;
-        
-        updateExpression(newExpression);
-        alert(`Operation added: Added "${opId}" operation as root`);
-      } 
-      // If we're dropping into a path in the expression
-      else if (overData.path) {
-        const path = overData.path;
-        let current = newExpression;
-        
-        // Navigate to the parent object
-        for (let i = 0; i < path.length - 1; i++) {
-          current = current[path[i]];
-        }
-        
-        // Get the last part of the path (the key or index)
-        const lastKey = path[path.length - 1];
-        
-        // If the current part is an array (like in "or" or "and" operators)
-        if (Array.isArray(current[lastKey])) {
-          const opId = draggingOperation.id;
-          
-          // Get the array
-          const array = current[lastKey];
-          
-          // Same default value logic as above
-          let defaultValue;
-          
-          if (["and", "or"].includes(opId)) {
-            defaultValue = [];
-          } else if (["if", ">", ">=", "<", "<=", "==", "===", "!=", "!=="].includes(opId)) {
-            defaultValue = ["", ""];
-          } else if (["+", "-", "*", "/", "%"].includes(opId)) {
-            defaultValue = [0, 0];
-          } else if (["var", "missing", "cat"].includes(opId)) {
-            defaultValue = "";
-          } else {
-            defaultValue = "";
-          }
-          
-          // Add the new operation to the array
-          array.push({ [opId]: defaultValue });
-          
-          updateExpression(newExpression);
-          alert(`Operation added: Added "${opId}" operation to the expression`);
-        }
-      }
-    }
-  }, [draggingOperation, expression, updateExpression]);
-
   // Function to reset the builder
   const resetBuilder = useCallback(() => {
-    setExpression(DEFAULT_EXPRESSION);
-    alert("Builder reset: The builder has been reset to the default template");
+    setExpression({ "==": [1, 1] });
   }, []);
 
-  // Function to evaluate the JSONLogic expression
+  // Function to add a template expression
+  const addTemplate = useCallback(() => {
+    setExpression({
+      "or": [
+        { "==": [{ "var": "user.age" }, 30] },
+        { ">=": [{ "var": "items.length" }, 3] }
+      ]
+    });
+  }, []);
+
+  // Function to evaluate the expression with the test data
   const evaluateExpression = useCallback(() => {
     try {
-      const parsedData = JSON.parse(testData);
-      const result = jsonLogic.apply(expression, parsedData);
+      const data = JSON.parse(testData);
+      const result = jsonLogic.apply(expression, data);
       setTestResult(result);
-
-      // Extract used variables
-      const extractedVars = [];
-      const findVars = (expr) => {
-        if (expr && typeof expr === 'object') {
-          if ('var' in expr) {
-            const varName = expr.var;
-            if (typeof varName === 'string') {
-              extractedVars.push({
-                name: varName,
-                value: jsonLogic.apply(expr, parsedData)
-              });
-            }
-          }
-          Object.values(expr).forEach(val => {
-            if (Array.isArray(val)) {
-              val.forEach(findVars);
-            } else if (val && typeof val === 'object') {
-              findVars(val);
-            }
-          });
-        }
-      };
-      
-      findVars(expression);
-      setUsedVariables(extractedVars);
-    } catch (error) {
-      console.error('Error evaluating expression:', error);
-      alert(`Evaluation failed: ${error instanceof Error ? error.message : "Invalid test data format"}`);
+    } catch (e) {
+      setTestResult(`Error: ${e.message}`);
     }
   }, [expression, testData]);
 
-  // Add custom operation
+  // Effect to evaluate expression when it changes
+  useEffect(() => {
+    evaluateExpression();
+  }, [expression, evaluateExpression]);
+
+  // Function to add a custom operation
   const addCustomOperation = useCallback((operation) => {
-    const customCategory = operations.find(category => category.name === 'Custom');
-    if (customCategory) {
-      const updatedOperations = operations.map(category => {
-        if (category.name === 'Custom') {
-          return {
-            ...category,
-            operations: [...category.operations, operation]
-          };
-        }
-        return category;
-      });
-      setOperations(updatedOperations);
-
-      // Add the custom operation to JSONLogic
-      if (operation.implementation) {
-        jsonLogic.add_operation(operation.id, operation.implementation);
-      }
-
-      setIsAddCustomOperationOpen(false);
-      alert(`Custom operation added: The "${operation.id}" operation has been added successfully`);
+    // First, check if the operation already exists
+    const operationExists = defaultOperations.some(op => op.id === operation.id);
+    
+    if (operationExists) {
+      alert(`Operation with ID "${operation.id}" already exists.`);
+      return;
     }
+    
+    // Add the operation to the appropriate category
+    const newOperations = [...operations];
+    const categoryIndex = newOperations.findIndex(cat => cat.name.toLowerCase() === operation.category);
+    
+    if (categoryIndex !== -1) {
+      newOperations[categoryIndex].operations.push(operation);
+    } else {
+      // Create a new category if it doesn't exist
+      newOperations.push({
+        name: operation.category.charAt(0).toUpperCase() + operation.category.slice(1),
+        operations: [operation]
+      });
+    }
+    
+    // Add the operation implementation to jsonLogic
+    if (operation.implementation) {
+      jsonLogic.add_operation(operation.id, operation.implementation);
+    }
+    
+    setOperations(newOperations);
+    setIsAddCustomOperationOpen(false);
   }, [operations]);
 
-  // Initialize pre-defined custom operations
-  useEffect(() => {
-    // Add afterDate and beforeDate operations
-    jsonLogic.add_operation("afterDate", (dateStr, compareToStr) => {
-      const date = new Date(dateStr);
-      const compareTo = new Date(compareToStr);
-      return date > compareTo;
-    });
+  // Handle drag start
+  const handleDragStart = (event) => {
+    const { active } = event;
+    setActiveDragId(active.id);
+    setActiveDragData(active.data.current);
+  };
 
-    jsonLogic.add_operation("beforeDate", (dateStr, compareToStr) => {
-      const date = new Date(dateStr);
-      const compareTo = new Date(compareToStr);
-      return date < compareTo;
-    });
-
-    // Evaluate the initial expression
-    evaluateExpression();
-  }, []);
+  // Handle drag end
+  const handleDragEnd = () => {
+    setActiveDragId(null);
+    setActiveDragData(null);
+  };
 
   return (
-    <div className="jsonlogic-builder">
-      <DndContext
-        sensors={sensors}
-        onDragStart={handleDragStart}
-        onDragOver={handleDragOver}
-        onDragEnd={handleDragEnd}
-        modifiers={[restrictToWindowEdges]}
-      >
-        <div className="builder-container">
-          <OperationsSidebar 
-            operations={operations} 
+    <DndContext onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
+      <div className="json-logic-builder">
+        <div className="builder-sidebar">
+          <OperationsSidebar
+            operations={operations}
             onAddCustomOperation={() => setIsAddCustomOperationOpen(true)}
           />
-          
-          <BuilderArea 
-            expression={expression} 
-            updateExpression={updateExpression}
-            resetBuilder={resetBuilder}
-          />
-          
-          <TestArea 
-            testData={testData}
-            setTestData={setTestData}
-            evaluateExpression={evaluateExpression}
-            testResult={testResult}
-            usedVariables={usedVariables}
-          />
         </div>
-
+        
+        <div className="builder-main">
+          <div className="builder-header">
+            <h2>JSONLogic Expression Builder</h2>
+            <div className="builder-controls">
+              <button onClick={resetBuilder}>Reset</button>
+              <button onClick={addTemplate}>Add Template</button>
+              <button onClick={() => setIsCollapsed(!isCollapsed)}>
+                {isCollapsed ? 'Expand All' : 'Collapse All'}
+              </button>
+            </div>
+          </div>
+          
+          <div className="builder-content">
+            <BuilderArea
+              expression={expression}
+              updateExpression={updateExpression}
+              resetBuilder={resetBuilder}
+              isCollapsedGlobal={isCollapsed}
+            />
+            
+            <TestArea
+              testData={testData}
+              setTestData={setTestData}
+              evaluateExpression={evaluateExpression}
+              testResult={testResult}
+              usedVariables={usedVariables}
+            />
+          </div>
+        </div>
+        
         <DragOverlay>
-          {activeId && draggingOperation ? (
+          {activeDragId ? (
             <div className="dragging-operation">
-              <div className="operation-name">"{draggingOperation.id}"</div>
-              <div className="operation-description">{draggingOperation.description}</div>
+              {activeDragData?.operation?.id || 'Operation'}
             </div>
           ) : null}
         </DragOverlay>
-      </DndContext>
-
-      <AddCustomOperationDialog 
-        isOpen={isAddCustomOperationOpen} 
-        onClose={() => setIsAddCustomOperationOpen(false)}
-        onAdd={addCustomOperation}
-      />
-    </div>
+        
+        <AddCustomOperationDialog
+          isOpen={isAddCustomOperationOpen}
+          onClose={() => setIsAddCustomOperationOpen(false)}
+          onAdd={addCustomOperation}
+        />
+      </div>
+    </DndContext>
   );
 };
 

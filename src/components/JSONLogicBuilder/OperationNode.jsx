@@ -11,387 +11,280 @@ const OperationNode = ({
   isRoot = false,
   parentIndex,
   onRemove,
-  isCollapsedGlobal = false,
-  allowRootDelete = false,
+  isCollapsedGlobal,
+  allowRootDelete = false
 }) => {
+  // State for collapsed status
   const [isCollapsed, setIsCollapsed] = useState(false);
-  // Determine if the value is a variable reference (has format {var: "name"})
-  const isVarReference = typeof value === 'object' && value !== null && 
-                       !Array.isArray(value) && 'var' in value;
-                       
-  const [valueType, setValueType] = useState(
-    isVarReference ? 'variable' : 'text'
-  );
   
+  // Update collapsed state when global collapsed state changes
   useEffect(() => {
-    setIsCollapsed(isCollapsedGlobal);
+    if (isCollapsedGlobal !== undefined) {
+      setIsCollapsed(isCollapsedGlobal);
+    }
   }, [isCollapsedGlobal]);
 
-  const { setNodeRef, isOver } = useDroppable({
+  // Set up drop area for this node
+  const { setNodeRef } = useDroppable({
     id: `droppable-${path.join('-')}`,
     data: {
+      type: 'operation-node',
       path,
-      operation,
-      acceptsOperation: true,
-    },
+      parentOperation: operation
+    }
   });
 
-  const isArray = Array.isArray(value);
-  const isOperator = typeof operation === 'string' && !['var', 'missing', 'missing_some'].includes(operation);
-  const isSimplePrimitive = !isArray && (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean');
-  
-  const handleRemove = () => {
-    if (isRoot && !allowRootDelete) {
-      alert("The root operation cannot be removed. Use the reset button instead.");
-      return;
-    }
-    
-    if (onRemove) {
-      onRemove();
-    } else if (isRoot && allowRootDelete) {
-      // Clear the entire expression
-      updateExpression({});
-      alert("All operations have been cleared from the builder");
-    }
-  };
-  
-  const toggleCollapse = () => {
-    setIsCollapsed(!isCollapsed);
+  // Get path to the value in the expression
+  const getValuePath = () => {
+    return path.length > 1 ? path.slice(1) : [];
   };
 
-  const updateValueAtPath = (newValue) => {
+  // Handle deletion of this node
+  const handleDelete = () => {
+    if (isRoot) {
+      if (allowRootDelete) {
+        // For root elements, just reset the expression to empty
+        updateExpression({});
+      }
+    } else if (onRemove) {
+      onRemove();
+    }
+  };
+
+  // Add a new value to an array
+  const addValueToArray = () => {
+    const valuePath = getValuePath();
     const newExpression = _.cloneDeep(expression);
-    let current = newExpression;
     
-    // Navigate to the parent object that contains our target
-    for (let i = 0; i < path.length - 1; i++) {
-      current = current[path[i]];
+    if (valuePath.length === 0) {
+      // If this is a root operation with an array value
+      if (Array.isArray(newExpression[operation])) {
+        newExpression[operation].push("");
+      }
+    } else {
+      // For nested operations
+      const arrayPath = ['$root', ...valuePath];
+      const array = _.get(newExpression, arrayPath);
+      
+      if (Array.isArray(array)) {
+        array.push("");
+        _.set(newExpression, arrayPath, array);
+      }
     }
     
-    // Update the value at the last path segment
-    current[path[path.length - 1]] = newValue;
     updateExpression(newExpression);
   };
-  
-  const handleValueChange = (e, valueIndex) => {
-    const inputValue = e.target.value;
+
+  // Handle change in a primitive value (string, number, boolean)
+  const handleValueChange = (newValue, index) => {
+    const valuePath = getValuePath();
+    const newExpression = _.cloneDeep(expression);
     
-    // Parse the input value to the appropriate type
-    const parseValue = (input) => {
-      // Try to convert to appropriate type
-      if (!isNaN(Number(input))) {
-        return Number(input);
-      } else if (input === 'true') {
-        return true;
-      } else if (input === 'false') {
-        return false;
+    // Determine value type
+    let parsedValue = newValue;
+    if (newValue === 'true') parsedValue = true;
+    else if (newValue === 'false') parsedValue = false;
+    else if (!isNaN(Number(newValue)) && newValue !== '') parsedValue = Number(newValue);
+    
+    if (valuePath.length === 0) {
+      // Root level value
+      if (Array.isArray(newExpression[operation]) && index !== undefined) {
+        newExpression[operation][index] = parsedValue;
+      } else {
+        newExpression[operation] = parsedValue;
       }
-      return input;
-    };
+    } else {
+      // Nested value
+      let targetPath;
+      if (index !== undefined && Array.isArray(_.get(newExpression, ['$root', ...valuePath]))) {
+        targetPath = ['$root', ...valuePath, index];
+      } else {
+        targetPath = ['$root', ...valuePath];
+      }
+      
+      _.set(newExpression, targetPath, parsedValue);
+    }
     
-    // If this is a simple value (not an array)
-    if (!isArray && valueIndex === undefined) {
-      const parsedValue = parseValue(inputValue);
-      updateValueAtPath(parsedValue);
-    } 
-    // If this is an array element
-    else if (isArray && valueIndex !== undefined) {
-      const newArray = [...value];
-      const parsedValue = parseValue(inputValue);
-      newArray[valueIndex] = parsedValue;
-      updateValueAtPath(newArray);
-    }
-  };
-  
-  const handleRemoveArrayItem = (index) => {
-    if (isArray) {
-      const newArray = [...value];
-      newArray.splice(index, 1);
-      updateValueAtPath(newArray);
-    }
-  };
-  
-  const handleAddToArray = () => {
-    if (isArray) {
-      const newArray = [...value, ""];
-      updateValueAtPath(newArray);
-    }
+    updateExpression(newExpression);
   };
 
-  // Render different content based on the type of value
-  const renderContent = () => {
-    // Special handling for var operation
-    if (operation === 'var') {
-      return (
-        <div className="node-child-content">
-          <div className="input-container">
-            <input 
-              type="text" 
-              value={typeof value === 'string' ? value : JSON.stringify(value)}
-              onChange={(e) => handleValueChange(e)} 
-              placeholder="Variable name"
-              className="input-field"
-            />
-            {!isRoot && (
-              <button 
-                onClick={handleRemove} 
-                className="action-button secondary-button"
-              >
-                Delete
-              </button>
-            )}
-          </div>
-        </div>
-      );
+  // Remove an item from an array
+  const removeArrayItem = (index) => {
+    const valuePath = getValuePath();
+    const newExpression = _.cloneDeep(expression);
+    
+    if (valuePath.length === 0) {
+      // Root level array
+      if (Array.isArray(newExpression[operation])) {
+        newExpression[operation].splice(index, 1);
+      }
+    } else {
+      // Nested array
+      const arrayPath = ['$root', ...valuePath];
+      const array = _.get(newExpression, arrayPath);
+      
+      if (Array.isArray(array)) {
+        array.splice(index, 1);
+        _.set(newExpression, arrayPath, array);
+      }
     }
     
-    // If value is a simple primitive, render input with toggle for variable
-    if (isSimplePrimitive) {
-      return (
-        <div className="value-container">
-          <div className="type-toggle">
-            <button 
-              className={`toggle-option ${valueType === 'text' ? 'toggle-option-active' : ''}`}
-              onClick={() => {
-                setValueType('text');
-                if (isVarReference) {
-                  // Convert from variable reference back to plain text
-                  const varObj = value;
-                  const varName = varObj.var || '';
-                  updateValueAtPath(varName);
-                }
-              }}
-            >
-              Text
-            </button>
-            <button 
-              className={`toggle-option ${valueType === 'variable' ? 'toggle-option-active' : ''}`}
-              onClick={() => {
-                setValueType('variable');
-                // Convert current value to a variable reference
-                updateValueAtPath({ var: String(value) });
-              }}
-            >
-              Variable
-            </button>
-          </div>
-          
-          <div className="input-container">
-            <input 
-              type={typeof value === 'number' ? 'number' : 'text'}
-              value={String(value)}
-              onChange={(e) => handleValueChange(e)} 
-              className="input-field"
-            />
-            
-            {!isRoot && (
-              <button 
-                onClick={handleRemove} 
-                className="action-button secondary-button"
+    updateExpression(newExpression);
+  };
+
+  // Toggle between showing value directly or as a var reference
+  const toggleVarWrapper = (index) => {
+    const valuePath = getValuePath();
+    const newExpression = _.cloneDeep(expression);
+    
+    let targetValue, targetPath;
+    
+    if (valuePath.length === 0) {
+      // Root level
+      if (Array.isArray(newExpression[operation]) && index !== undefined) {
+        targetValue = newExpression[operation][index];
+        targetPath = [operation, index];
+      } else {
+        targetValue = newExpression[operation];
+        targetPath = [operation];
+      }
+    } else {
+      // Nested value
+      if (index !== undefined) {
+        targetPath = ['$root', ...valuePath, index];
+      } else {
+        targetPath = ['$root', ...valuePath];
+      }
+      targetValue = _.get(newExpression, targetPath);
+    }
+    
+    // Toggle between direct value and var wrapper
+    if (typeof targetValue === 'object' && targetValue !== null && 'var' in targetValue) {
+      // If it's a var, unwrap it
+      _.set(newExpression, targetPath, targetValue.var);
+    } else if (typeof targetValue === 'string') {
+      // If it's a string, wrap it in a var
+      _.set(newExpression, targetPath, { var: targetValue });
+    }
+    
+    updateExpression(newExpression);
+  };
+
+  // Render array values
+  const renderArrayValues = (arrayValues) => {
+    return (
+      <div className="array-values">
+        {arrayValues.map((item, index) => (
+          <div key={index} className="array-item">
+            <div className="array-item-header">
+              <span className="array-index">[{index}]</span>
+              <button
+                className="remove-item-button"
+                onClick={() => removeArrayItem(index)}
               >
-                Delete
+                ×
               </button>
-            )}
-          </div>
-          
-          {valueType === 'variable' && (
-            <div className="variable-info">
-              This will use the value from the variable named "{isVarReference && value.var || String(value)}"
             </div>
-          )}
-        </div>
-      );
-    }
-    
-    // If value is an array, render items recursively
-    if (isArray && !isCollapsed) {
-      return (
-        <div className="node-child-content">
-          {value.map((item, index) => {
-            const itemPath = [...path, index.toString()];
-            
-            // If item is an object with a single key, it's an operation
-            if (item && typeof item === 'object' && !Array.isArray(item) && Object.keys(item).length === 1) {
-              const itemOperation = Object.keys(item)[0];
-              return (
-                <OperationNode 
-                  key={`${itemPath.join('-')}`}
-                  operation={itemOperation}
-                  value={item[itemOperation]}
-                  path={[...itemPath, itemOperation]}
-                  updateExpression={updateExpression}
-                  expression={expression}
-                  parentIndex={index}
-                  onRemove={() => handleRemoveArrayItem(index)}
-                  isCollapsedGlobal={isCollapsedGlobal}
-                />
-              );
-            }
-            
-            // Otherwise render as simple value
-            // Check if the item is a variable reference
-            const isItemVarRef = typeof item === 'object' && item !== null && 
-                              !Array.isArray(item) && 'var' in item;
-                              
-            return (
-              <div key={`${itemPath.join('-')}`} className="array-item">
-                <div className="type-toggle">
-                  <button 
-                    className={`toggle-option ${!isItemVarRef ? 'toggle-option-active' : ''}`}
-                    onClick={() => {
-                      if (isItemVarRef) {
-                        // Convert back to text
-                        const varObj = item;
-                        const newArray = [...value];
-                        newArray[index] = varObj.var || '';
-                        updateValueAtPath(newArray);
-                      }
-                    }}
-                  >
-                    Text
-                  </button>
-                  <button 
-                    className={`toggle-option ${isItemVarRef ? 'toggle-option-active' : ''}`}
-                    onClick={() => {
-                      if (!isItemVarRef) {
-                        // Convert to variable reference
-                        const newArray = [...value];
-                        newArray[index] = { var: String(item) };
-                        updateValueAtPath(newArray);
-                      }
-                    }}
-                  >
-                    Variable
-                  </button>
-                </div>
-                
-                <div className="input-container">
-                  <input 
-                    type={typeof item === 'number' ? 'number' : 'text'}
-                    value={
-                      isItemVarRef ? 
-                        item.var || '' : 
-                        (typeof item === 'object' ? JSON.stringify(item) : String(item))
-                    }
-                    onChange={(e) => {
-                      const newValue = e.target.value;
-                      const newArray = [...value];
-                      
-                      if (isItemVarRef) {
-                        // Update the variable name in the var reference object
-                        newArray[index] = { var: newValue };
-                      } else {
-                        // Try to parse the value appropriately
-                        const parsedValue = !isNaN(Number(newValue)) ? Number(newValue) :
-                                         newValue === 'true' ? true :
-                                         newValue === 'false' ? false : newValue;
-                        newArray[index] = parsedValue;
-                      }
-                      
-                      updateValueAtPath(newArray);
-                    }} 
-                    className="input-field"
-                  />
-                  <button 
-                    onClick={() => handleRemoveArrayItem(index)} 
-                    className="action-button secondary-button"
-                  >
-                    Delete
-                  </button>
-                </div>
-              </div>
-            );
-          })}
-          
-          {/* Drop zone for adding new operations */}
-          <div 
-            ref={setNodeRef} 
-            className={`dropzone ${isOver ? 'dropzone-active' : ''}`}
-          >
-            Drop another operation here or 
-            <button 
-              className="action-button primary-button"
-              onClick={handleAddToArray}
-            >
-              add value
-            </button>
+            {renderValue(item, index)}
           </div>
-        </div>
-      );
+        ))}
+        <button className="add-item-button" onClick={addValueToArray}>
+          + Add Item
+        </button>
+      </div>
+    );
+  };
+
+  // Render a value (could be primitive, object, or array)
+  const renderValue = (val, index) => {
+    // If the value is an array
+    if (Array.isArray(val)) {
+      return renderArrayValues(val);
     }
     
-    // If value is an object but not an array, handle specially
-    if (typeof value === 'object' && !isArray) {
-      const pairs = Object.entries(value);
-      if (pairs.length > 0) {
+    // If the value is a JSONLogic sub-expression
+    if (val && typeof val === 'object') {
+      const [subOperation, subValue] = Object.entries(val)[0] || [];
+      
+      if (subOperation) {
+        const subPath = [...path];
+        if (Array.isArray(value)) {
+          subPath.push(index, subOperation);
+        } else {
+          subPath.push(subOperation);
+        }
+        
         return (
-          <div className="node-child-content">
-            {pairs.map(([key, val]) => {
-              const itemPath = [...path, key];
-              return (
-                <div key={itemPath.join('-')} className="object-property">
-                  <div className="property-name">{key}:</div>
-                  {typeof val === 'object' ? (
-                    <OperationNode
-                      operation={key}
-                      value={val}
-                      path={itemPath}
-                      updateExpression={updateExpression}
-                      expression={expression}
-                    />
-                  ) : (
-                    <div className="property-value">
-                      <input 
-                        type="text" 
-                        value={String(val)}
-                        onChange={(e) => {
-                          const newObj = {...value};
-                          newObj[key] = e.target.value;
-                          updateValueAtPath(newObj);
-                        }} 
-                        className="input-field"
-                      />
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
+          <OperationNode
+            operation={subOperation}
+            value={subValue}
+            path={subPath}
+            updateExpression={updateExpression}
+            expression={expression}
+            parentIndex={index}
+            onRemove={() => {
+              const newExpression = _.cloneDeep(expression);
+              if (Array.isArray(value)) {
+                value[index] = "";
+                _.set(newExpression, ['$root', ...getValuePath()], value);
+              }
+              updateExpression(newExpression);
+            }}
+            isCollapsedGlobal={isCollapsedGlobal}
+          />
         );
       }
     }
     
-    // Fallback for empty arrays when collapsed
-    if (isArray && isCollapsed) {
-      return (
-        <div className="collapsed-array">
-          {value.length} items (collapsed)
-        </div>
-      );
-    }
-    
-    return null;
+    // For primitive values (string, number, boolean)
+    return (
+      <div className="primitive-value">
+        <input
+          type="text"
+          value={val === null ? '' : String(val)}
+          onChange={(e) => handleValueChange(e.target.value, index)}
+          className="value-input"
+        />
+        <button
+          className="toggle-var-button"
+          onClick={() => toggleVarWrapper(index)}
+          title="Toggle between direct value and variable reference"
+        >
+          {typeof val === 'object' && val !== null && 'var' in val ? 'raw' : 'var'}
+        </button>
+      </div>
+    );
   };
 
   return (
-    <div className="operation-node">
-      <div className="operation-header">
-        <div className="drag-handle">≣</div>
-        <div className="operation-name">{operation}</div>
-        <div className="node-controls">
-          {isArray && (
-            <button onClick={toggleCollapse} className="action-button secondary-button">
-              {isCollapsed ? "+" : "-"}
-            </button>
-          )}
-          {(!isRoot || allowRootDelete) && (
-            <button onClick={handleRemove} className="action-button secondary-button">
-              Delete
-            </button>
-          )}
+    <div
+      ref={setNodeRef}
+      className={`operation-node ${isRoot ? 'root-node' : ''}`}
+    >
+      <div className="node-header">
+        <div className="operation-info">
+          <button
+            className="collapse-button"
+            onClick={() => setIsCollapsed(!isCollapsed)}
+          >
+            {isCollapsed ? '►' : '▼'}
+          </button>
+          <span className="operation-label">{operation}</span>
         </div>
+        <button
+          className="delete-node-button"
+          onClick={handleDelete}
+          disabled={isRoot && !allowRootDelete}
+        >
+          Remove
+        </button>
       </div>
-      {renderContent()}
+      
+      {!isCollapsed && (
+        <div className="node-content">
+          {renderValue(value)}
+        </div>
+      )}
     </div>
   );
 };

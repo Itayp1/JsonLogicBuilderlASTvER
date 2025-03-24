@@ -4,16 +4,16 @@ import './styles.css';
 
 function App() {
   return (
-    <div className="app">
+    <div className="app-container">
       <header className="app-header">
-        <h1>JSONLogic Builder</h1>
-        <p>Create and test JSONLogic expressions with an interactive builder</p>
+        <h1>Visual JSONLogic Builder</h1>
+        <p>Create and test JSONLogic expressions with an intuitive visual interface</p>
       </header>
       <main className="app-content">
         <JSONLogicBuilder />
       </main>
       <footer className="app-footer">
-        <p>Built with <a href="https://jsonlogic.com" target="_blank" rel="noopener noreferrer">JSONLogic</a> and React</p>
+        <p>Built with React and json-logic-js</p>
       </footer>
     </div>
   );
