@@ -4,8 +4,20 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { JSONLogicExpression } from './types';
 import OperationNode from './OperationNode';
-import { RefreshCw, Maximize, Minimize, Copy, Code } from 'lucide-react';
+import { RefreshCw, Maximize, Minimize, Copy, Code, Plus } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
+
+// Default template example
+const DEFAULT_TEMPLATE = {
+  "or": [
+    {
+      ">": [
+        { "+": [1, { "var": "myVariable" }] },
+        5
+      ]
+    }
+  ]
+};
 
 interface BuilderAreaProps {
   expression: JSONLogicExpression;
@@ -20,6 +32,10 @@ const BuilderArea = ({ expression, updateExpression, resetBuilder }: BuilderArea
 
   const { setNodeRef } = useDroppable({
     id: 'builder-root',
+    data: {
+      acceptsOperation: true,
+      isRoot: true
+    }
   });
 
   const handleExpandAll = () => {
@@ -51,9 +67,27 @@ const BuilderArea = ({ expression, updateExpression, resetBuilder }: BuilderArea
     });
   };
 
+  const handleAddTemplate = () => {
+    updateExpression(DEFAULT_TEMPLATE);
+    toast({
+      title: "Template added",
+      description: "Default template has been applied to the builder"
+    });
+  };
+
+  const handleClearBuilder = () => {
+    updateExpression({});
+    toast({
+      title: "Builder cleared",
+      description: "All operations have been removed from the builder"
+    });
+  };
+
   // Find root operation (first key in the object)
   const rootOperation = Object.keys(expression)[0];
   const rootValue = expression[rootOperation];
+
+  const isEmpty = !rootOperation;
 
   return (
     <div className="lg:col-span-6 space-y-4">
@@ -65,8 +99,17 @@ const BuilderArea = ({ expression, updateExpression, resetBuilder }: BuilderArea
               size="icon" 
               variant="ghost" 
               className="h-8 w-8 text-primary-foreground opacity-90 hover:opacity-100 hover:bg-white/10"
-              onClick={resetBuilder}
-              title="Reset Builder"
+              onClick={handleAddTemplate}
+              title="Add Template"
+            >
+              <Plus className="h-4 w-4" />
+            </Button>
+            <Button 
+              size="icon" 
+              variant="ghost" 
+              className="h-8 w-8 text-primary-foreground opacity-90 hover:opacity-100 hover:bg-white/10"
+              onClick={handleClearBuilder}
+              title="Clear Builder"
             >
               <RefreshCw className="h-4 w-4" />
             </Button>
@@ -96,7 +139,7 @@ const BuilderArea = ({ expression, updateExpression, resetBuilder }: BuilderArea
             Drag operations from the sidebar and drop them here. Nest operations by dragging inside other operations.
           </div>
 
-          <div ref={setNodeRef} className="min-h-32">
+          <div ref={setNodeRef} className={`min-h-32 ${isEmpty ? 'border-2 border-dashed border-gray-300 rounded-lg p-6' : ''}`}>
             {rootOperation ? (
               <OperationNode
                 operation={rootOperation}
@@ -106,10 +149,15 @@ const BuilderArea = ({ expression, updateExpression, resetBuilder }: BuilderArea
                 expression={expression}
                 isRoot={true}
                 isCollapsedGlobal={isCollapsed}
+                allowRootDelete={true}
               />
             ) : (
-              <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center">
-                <p className="text-muted-foreground">Drop an operation here to start building your logic</p>
+              <div className="text-center">
+                <p className="text-muted-foreground mb-4">Drop an operation here to start building your logic</p>
+                <Button onClick={handleAddTemplate} className="mx-auto">
+                  <Plus className="h-4 w-4 mr-2" />
+                  Add Template
+                </Button>
               </div>
             )}
           </div>

@@ -2,9 +2,10 @@ import { useState, useEffect } from 'react';
 import { useDroppable } from '@dnd-kit/core';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { JSONLogicExpression } from './types';
 import { useToast } from '@/hooks/use-toast';
-import { Trash2, GripVertical, ChevronDown, ChevronRight } from 'lucide-react';
+import { Trash2, GripVertical, ChevronDown, ChevronRight, Variable, Text } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import _ from 'lodash';
 
@@ -18,6 +19,7 @@ interface OperationNodeProps {
   parentIndex?: number;
   onRemove?: () => void;
   isCollapsedGlobal?: boolean;
+  allowRootDelete?: boolean;
 }
 
 const OperationNode = ({
@@ -30,9 +32,13 @@ const OperationNode = ({
   parentIndex,
   onRemove,
   isCollapsedGlobal = false,
+  allowRootDelete = false,
 }: OperationNodeProps) => {
   const { toast } = useToast();
   const [isCollapsed, setIsCollapsed] = useState(false);
+  const [valueType, setValueType] = useState<'text' | 'variable'>(
+    typeof value === 'object' && value !== null && 'var' in value ? 'variable' : 'text'
+  );
   
   useEffect(() => {
     setIsCollapsed(isCollapsedGlobal);
@@ -52,7 +58,7 @@ const OperationNode = ({
   const isSimplePrimitive = !isArray && (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean');
   
   const handleRemove = () => {
-    if (isRoot) {
+    if (isRoot && !allowRootDelete) {
       toast({
         variant: "destructive",
         title: "Cannot remove root operation",
@@ -63,6 +69,13 @@ const OperationNode = ({
     
     if (onRemove) {
       onRemove();
+    } else if (isRoot && allowRootDelete) {
+      // Clear the entire expression
+      updateExpression({});
+      toast({
+        title: "Root operation removed",
+        description: "All operations have been cleared from the builder",
+      });
     }
   };
   
@@ -87,35 +100,28 @@ const OperationNode = ({
   const handleValueChange = (e: React.ChangeEvent<HTMLInputElement>, valueIndex?: number) => {
     const inputValue = e.target.value;
     
+    // Parse the input value to the appropriate type
+    const parseValue = (input: string) => {
+      // Try to convert to appropriate type
+      if (!isNaN(Number(input))) {
+        return Number(input);
+      } else if (input === 'true') {
+        return true;
+      } else if (input === 'false') {
+        return false;
+      }
+      return input;
+    };
+    
     // If this is a simple value (not an array)
     if (!isArray && valueIndex === undefined) {
-      let parsedValue = inputValue;
-      
-      // Try to convert to appropriate type
-      if (!isNaN(Number(inputValue))) {
-        parsedValue = Number(inputValue);
-      } else if (inputValue === 'true') {
-        parsedValue = true;
-      } else if (inputValue === 'false') {
-        parsedValue = false;
-      }
-      
+      const parsedValue = parseValue(inputValue);
       updateValueAtPath(parsedValue);
     } 
     // If this is an array element
     else if (isArray && valueIndex !== undefined) {
       const newArray = [...value];
-      let parsedValue = inputValue;
-      
-      // Try to convert to appropriate type
-      if (!isNaN(Number(inputValue))) {
-        parsedValue = Number(inputValue);
-      } else if (inputValue === 'true') {
-        parsedValue = true;
-      } else if (inputValue === 'false') {
-        parsedValue = false;
-      }
-      
+      const parsedValue = parseValue(inputValue);
       newArray[valueIndex] = parsedValue;
       updateValueAtPath(newArray);
     }
@@ -167,27 +173,69 @@ const OperationNode = ({
       );
     }
     
-    // If value is a simple primitive, render input
+    // If value is a simple primitive, render input with toggle for variable
     if (isSimplePrimitive) {
       return (
-        <div className="flex items-center space-x-2">
-          <div className="bg-gray-100 border rounded p-2 flex-grow">
-            <Input 
-              type={typeof value === 'number' ? 'number' : 'text'}
-              value={String(value)}
-              onChange={(e) => handleValueChange(e)} 
-              className="w-full bg-transparent border-none focus-visible:ring-0 focus-visible:outline-none"
-            />
-          </div>
-          {!isRoot && (
-            <Button 
-              variant="ghost" 
-              size="icon" 
-              onClick={handleRemove} 
-              className="text-muted-foreground hover:text-destructive"
+        <div className="flex flex-col space-y-2">
+          <div className="flex items-center space-x-2">
+            <Select 
+              value={valueType}
+              onValueChange={(newType: 'text' | 'variable') => {
+                setValueType(newType);
+                if (newType === 'variable') {
+                  // Convert current value to a variable reference
+                  updateValueAtPath({ var: String(value) });
+                } else if (newType === 'text' && typeof value === 'object' && value !== null && 'var' in value) {
+                  // Convert from variable reference back to plain text
+                  const varName = String(value.var);
+                  updateValueAtPath(varName);
+                }
+              }}
             >
-              <Trash2 className="h-4 w-4" />
-            </Button>
+              <SelectTrigger className="w-[100px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="text">
+                  <div className="flex items-center">
+                    <Text className="mr-2 h-4 w-4" />
+                    <span>Text</span>
+                  </div>
+                </SelectItem>
+                <SelectItem value="variable">
+                  <div className="flex items-center">
+                    <Variable className="mr-2 h-4 w-4" />
+                    <span>Variable</span>
+                  </div>
+                </SelectItem>
+              </SelectContent>
+            </Select>
+            
+            <div className="bg-gray-100 border rounded p-2 flex-grow">
+              <Input 
+                type={typeof value === 'number' ? 'number' : 'text'}
+                value={String(value)}
+                onChange={(e) => handleValueChange(e)} 
+                className="w-full bg-transparent border-none focus-visible:ring-0 focus-visible:outline-none"
+              />
+            </div>
+            
+            {!isRoot && (
+              <Button 
+                variant="ghost" 
+                size="icon" 
+                onClick={handleRemove} 
+                className="text-muted-foreground hover:text-destructive"
+              >
+                <Trash2 className="h-4 w-4" />
+              </Button>
+            )}
+          </div>
+          
+          {valueType === 'variable' && (
+            <div className="pl-2 text-xs text-blue-600">
+              This will use the value from the variable named "{value}"
+            </div>
           )}
         </div>
       );
@@ -332,7 +380,7 @@ const OperationNode = ({
         </div>
         
         <div className="flex space-x-1">
-          {!isRoot && (
+          {(!isRoot || allowRootDelete) && (
             <Button 
               variant="ghost" 
               size="icon" 
